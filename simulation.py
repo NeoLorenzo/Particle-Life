@@ -54,8 +54,20 @@ class Simulation:
         self.radius_min = params['interaction_radius_min']
         self.radius_max = params['interaction_radius_max']
         self.repulsion_strength = params.get('repulsion_strength', 1.0)
+
+        # Rule 7: Enforce data contracts. Validate config on initialization.
+        num_types = self.particles.particle_types
+        matrix_shape = self.interaction_matrix.shape
+        if matrix_shape != (num_types, num_types):
+            msg = (
+                f"Configuration error: Interaction matrix shape {matrix_shape} "
+                f"does not match particle_types ({num_types}). The matrix must be square "
+                f"and its dimensions must equal the number of particle types."
+            )
+            logging.critical(msg)
+            raise ValueError(msg)
         
-        logging.info("Simulation logic initialized.")
+        logging.info("Simulation logic initialized and configuration validated.")
 
     def step(self):
         """
