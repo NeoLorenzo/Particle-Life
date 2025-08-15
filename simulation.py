@@ -40,6 +40,26 @@ from numba.typed import List
 #       are clamped within the window bounds.
 
 @jit(nopython=True)
+def _update_grid_numba(positions, grid, grid_width, grid_height, grid_cell_size):
+    """Numba-jitted function to populate the spatial grid."""
+    # Clear the grid
+    for cell in grid:
+        cell.clear()
+    
+    # Place particle indices into grid cells
+    particle_count = positions.shape[0]
+    for i in range(particle_count):
+        pos = positions[i]
+        cell_x = int(pos[0] / grid_cell_size)
+        cell_y = int(pos[1] / grid_cell_size)
+        
+        # Clamp to grid bounds
+        cell_x = max(0, min(grid_width - 1, cell_x))
+        cell_y = max(0, min(grid_height - 1, cell_y))
+
+        grid[cell_x + cell_y * grid_width].append(i)
+
+@jit(nopython=True)
 def _calculate_forces_numba(
     positions, types, grid, grid_width, grid_height, grid_cell_size,
     radius_min, radius_min_sq, radius_max_sq, repulsion_strength, interaction_matrix
@@ -47,6 +67,8 @@ def _calculate_forces_numba(
     """
     Numba-jitted function to calculate inter-particle forces.
     This function is kept separate from the class for Numba compatibility.
+    
+    This optimized version calculates each pairwise interaction only once.
     """
     particle_count = positions.shape[0]
     total_force = np.zeros_like(positions)
@@ -64,10 +86,10 @@ def _calculate_forces_numba(
                 
                 if 0 <= nx < grid_width and 0 <= ny < grid_height:
                     cell_idx = nx + ny * grid_width
-                    # This works because the `grid` argument is a Numba Typed List,
-                    # which supports jagged (uneven) lists in nopython mode.
                     for j in grid[cell_idx]:
-                        if i == j:
+                        # By enforcing i < j, we ensure each pair is
+                        # processed exactly once.
+                        if i >= j:
                             continue
 
                         pos_j = positions[j]
@@ -78,14 +100,18 @@ def _calculate_forces_numba(
                             distance = np.sqrt(distance_sq)
                             direction = delta_pos / (distance + 1e-9)
                             
+                            # Rule 11.6: Ensure temp array is also float32 for type consistency
+                            force = np.zeros(2, dtype=np.float32)
                             if distance_sq < radius_min_sq:
                                 force = direction * repulsion_strength * (1 - distance / radius_min)
-                                total_force[i] -= force
                             else:
                                 type_j = types[j]
                                 strength = interaction_matrix[type_i, type_j]
                                 force = direction * strength
-                                total_force[i] -= force
+                            
+                            # Apply force to both particles (Newton's 3rd Law)
+                            total_force[i] -= force
+                            total_force[j] += force
     return total_force
 
 class Simulation:
@@ -102,11 +128,12 @@ class Simulation:
             params (Dict[str, Any]): Simulation parameters from config.
         """
         self.particles = particles
-        self.friction = params['friction']
-        self.interaction_matrix = np.array(params['interaction_matrix'])
-        self.radius_min = params['interaction_radius_min']
-        self.radius_max = params['interaction_radius_max']
-        self.repulsion_strength = params.get('repulsion_strength', 1.0)
+        # Rule 11.6: Use float32 for performance.
+        self.friction = np.float32(params['friction'])
+        self.interaction_matrix = np.array(params['interaction_matrix'], dtype=np.float32)
+        self.radius_min = np.float32(params['interaction_radius_min'])
+        self.radius_max = np.float32(params['interaction_radius_max'])
+        self.repulsion_strength = np.float32(params.get('repulsion_strength', 1.0))
 
         # Rule 11: Performance - Pre-calculate squared radii to avoid sqrt in hot loop
         self.radius_min_sq = self.radius_min ** 2
@@ -140,30 +167,15 @@ class Simulation:
             f"cell size {self.grid_cell_size:.2f}px."
         )
 
-    def _update_grid(self):
-        """Populates the spatial grid with current particle indices."""
-        # Clear the grid
-        for cell in self.grid:
-            cell.clear()
-        
-        # Place particle indices into grid cells
-        for i in range(self.particles.particle_count):
-            pos = self.particles.positions[i]
-            cell_x = int(pos[0] / self.grid_cell_size)
-            cell_y = int(pos[1] / self.grid_cell_size)
-            
-            # Clamp to grid bounds
-            cell_x = max(0, min(self.grid_width - 1, cell_x))
-            cell_y = max(0, min(self.grid_height - 1, cell_y))
-
-            self.grid[cell_x + cell_y * self.grid_width].append(i)
-
     def step(self):
         """
         Executes one time step of the simulation.
         """
-        # 1. Update the spatial grid with particle locations
-        self._update_grid()
+        # 1. Update the spatial grid with particle locations (using Numba)
+        _update_grid_numba(
+            self.particles.positions, self.grid,
+            self.grid_width, self.grid_height, self.grid_cell_size
+        )
 
         # 2. Calculate forces using the Numba-jitted function
         total_force = _calculate_forces_numba(

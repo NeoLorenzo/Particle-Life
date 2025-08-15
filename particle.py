@@ -51,12 +51,13 @@ class ParticleSystem:
         self.rng = np.random.default_rng(self.seed)
 
         # Initialize particle state arrays
+        # Rule 11.6: Use float32 for performance.
         self.positions = self.rng.uniform(
             low=[0, 0],
             high=[width, height],
             size=(self.particle_count, 2)
-        )
-        self.velocities = np.zeros((self.particle_count, 2), dtype=np.float64)
+        ).astype(np.float32)
+        self.velocities = np.zeros((self.particle_count, 2), dtype=np.float32)
         self.types = self.rng.integers(
             low=0,
             high=self.particle_types,
