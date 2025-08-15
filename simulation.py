@@ -68,7 +68,8 @@ def _calculate_forces_numba(
     Numba-jitted function to calculate inter-particle forces.
     This function is kept separate from the class for Numba compatibility.
     
-    This optimized version calculates each pairwise interaction only once.
+    This version breaks Newton's 3rd Law by calculating interactions
+    for each particle independently, allowing for non-conservative forces.
     """
     particle_count = positions.shape[0]
     total_force = np.zeros_like(positions)
@@ -87,9 +88,7 @@ def _calculate_forces_numba(
                 if 0 <= nx < grid_width and 0 <= ny < grid_height:
                     cell_idx = nx + ny * grid_width
                     for j in grid[cell_idx]:
-                        # By enforcing i < j, we ensure each pair is
-                        # processed exactly once.
-                        if i >= j:
+                        if i == j:
                             continue
 
                         pos_j = positions[j]
@@ -98,26 +97,26 @@ def _calculate_forces_numba(
 
                         if 0 < distance_sq < radius_max_sq:
                             distance = np.sqrt(distance_sq)
+                            # Direction is FROM i TO j
                             direction = delta_pos / (distance + 1e-9)
                             
-                            # Rule 11.6: Ensure temp array is also float32 for type consistency
                             force = np.zeros(2, dtype=np.float32)
                             if distance_sq < radius_min_sq:
-                                force = direction * repulsion_strength * (1 - distance / radius_min)
+                                # Repulsion is universal and symmetrical
+                                force = -direction * repulsion_strength * (1 - distance / radius_min)
                             else:
+                                # Asymmetrical interaction force
                                 type_j = types[j]
                                 strength = interaction_matrix[type_i, type_j]
-                                # A more traditional particle life force model where the force
-                                # is strongest at a distance between radius_min and radius_max.
+                                
                                 if distance > (radius_min + radius_max) / 2:
                                     force_magnitude = strength * (1 - (distance - (radius_min + radius_max) / 2) / ((radius_max - radius_min) / 2))
                                 else:
                                     force_magnitude = strength * (distance - radius_min) / ((radius_max - radius_min) / 2)
                                 force = direction * force_magnitude
                             
-                            # Apply force to both particles (Newton's 3rd Law)
-                            total_force[i] -= force
-                            total_force[j] += force
+                            # Apply the calculated force only to particle i
+                            total_force[i] += force
     return total_force
 
 class Simulation:
