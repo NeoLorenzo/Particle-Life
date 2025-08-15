@@ -135,6 +135,7 @@ class Simulation:
         self.particles = particles
         # Rule 11.6: Use float32 for performance.
         self.max_velocity = np.float32(params.get('max_velocity', 5.0))
+        self.friction = np.float32(params.get('friction', 0.05))
         self.interaction_matrix = np.array(params['interaction_matrix'], dtype=np.float32)
         self.radius_min = np.float32(params['interaction_radius_min'])
         self.radius_max = np.float32(params['interaction_radius_max'])
@@ -193,7 +194,10 @@ class Simulation:
         # 3. Update velocities with forces
         self.particles.velocities += total_force
 
-        # 4. Apply velocity cap
+        # 4. Apply friction
+        self.particles.velocities *= (1.0 - self.friction)
+
+        # 5. Apply velocity cap
         velocities = self.particles.velocities
         speed = np.linalg.norm(velocities, axis=1)
         # Identify particles moving too fast
@@ -206,15 +210,9 @@ class Simulation:
         # 5. Update positions with velocities
         self.particles.positions += self.particles.velocities
 
-        # 5. Handle boundary conditions (bouncing)
+        # 6. Handle boundary conditions (toroidal wrap-around)
         pos = self.particles.positions
-        vel = self.particles.velocities
         
-        mask_x = (pos[:, 0] < 0) | (pos[:, 0] > WINDOW_WIDTH)
-        vel[mask_x, 0] *= -1
-        
-        mask_y = (pos[:, 1] < 0) | (pos[:, 1] > WINDOW_HEIGHT)
-        vel[mask_y, 1] *= -1
-
-        np.clip(pos[:, 0], 0, WINDOW_WIDTH, out=pos[:, 0])
-        np.clip(pos[:, 1], 0, WINDOW_HEIGHT, out=pos[:, 1])
+        # Wrap positions using the modulo operator for an infinite space effect
+        pos[:, 0] %= WINDOW_WIDTH
+        pos[:, 1] %= WINDOW_HEIGHT
