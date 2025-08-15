@@ -1,7 +1,7 @@
 {
   "simulation_parameters": {
     "seed": 42,
-    "particle_count": 2000,
+    "particle_count": 10000,
     "particle_types": 2,
     "friction": 0.5,
     "repulsion_strength": 0.5,
