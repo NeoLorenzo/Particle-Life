@@ -62,7 +62,7 @@ def _update_grid_numba(positions, grid, grid_width, grid_height, grid_cell_size)
 @jit(nopython=True)
 def _calculate_forces_numba(
     positions, types, grid, grid_width, grid_height, grid_cell_size,
-    radius_min, radius_min_sq, radius_max_sq, repulsion_strength, interaction_matrix
+    radius_min, radius_min_sq, radius_max, radius_max_sq, repulsion_strength, interaction_matrix
 ):
     """
     Numba-jitted function to calculate inter-particle forces.
@@ -107,7 +107,11 @@ def _calculate_forces_numba(
                             else:
                                 type_j = types[j]
                                 strength = interaction_matrix[type_i, type_j]
-                                force = direction * strength
+                                # Rule 3: Abstracted force model. Force is now distance-dependent.
+                                # It's zero at radius_max and scales up as particles get closer.
+                                # This prevents the "stuck" equilibrium of a constant force model.
+                                force_magnitude = strength * (1.0 - (distance / radius_max))
+                                force = direction * force_magnitude
                             
                             # Apply force to both particles (Newton's 3rd Law)
                             total_force[i] -= force
@@ -181,7 +185,7 @@ class Simulation:
         total_force = _calculate_forces_numba(
             self.particles.positions, self.particles.types, self.grid,
             self.grid_width, self.grid_height, self.grid_cell_size,
-            self.radius_min, self.radius_min_sq, self.radius_max_sq,
+            self.radius_min, self.radius_min_sq, self.radius_max, self.radius_max_sq,
             self.repulsion_strength, self.interaction_matrix
         )
 

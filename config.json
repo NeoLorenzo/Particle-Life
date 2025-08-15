@@ -1,16 +1,18 @@
 {
   "simulation_parameters": {
     "seed": 42,
-    "particle_count": 10000,
-    "particle_types": 2,
+    "particle_count": 1000,
+    "particle_types": 4,
     "friction": 0.5,
-    "repulsion_strength": 0.5,
+    "repulsion_strength": 1.0,
     "interaction_matrix": [
-      [1.0,  0.5],
-      [0.5,  -1.0]
+      [-0.8,  1.0, -0.5, -0.5],
+      [-1.0, -0.5,  1.0, -0.5],
+      [0.5, -1.0, -0.5, -0.5],
+      [-0.5, -0.5, -0.5, -0.1]
     ],
     "interaction_radius_min": 10.0,
-    "interaction_radius_max": 100.0
+    "interaction_radius_max": 80.0
   },
   "logging": {
     "level": "INFO",
@@ -18,7 +20,7 @@
     "log_file": "logs/simulation_run.log"
   },
   "run_control": {
-    "max_steps": 50,
-    "log_throttle_steps": 10
+    "max_steps": 2000,
+    "log_throttle_steps": 100
   }
 }
