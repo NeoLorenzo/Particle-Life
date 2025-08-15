@@ -12,6 +12,9 @@ This script orchestrates the entire simulation lifecycle:
 import logging
 from utils import setup_logging, load_config
 import numpy as np
+import cProfile
+import pstats
+import io
 
 def main():
     """
@@ -47,29 +50,52 @@ def main():
     from visualization import Visualizer
     visualizer = Visualizer(WINDOW_WIDTH, WINDOW_HEIGHT)
 
+    # --- Profiler Setup (Rule 11) ---
+    profiler = cProfile.Profile()
+
     # Main simulation loop
     log_throttle = run_params.get('log_throttle_steps', 100)
+    max_steps = run_params.get('max_steps', 5000) # Default to 5000 if not in config
     
     running = True
     step_num = 0
+    
+    profiler.enable()
     while running:
         sim.step()
         step_num += 1
 
         # The visualizer's draw method now controls the loop
-        # by checking for the QUIT event.
-        running = visualizer.draw(particles)
+        # by checking for the QUIT event. It returns False if the user quits.
+        if not visualizer.draw(particles):
+            running = False
 
         # Rule 2.4: Hot loops must throttle logs
         if step_num % log_throttle == 0:
-            logging.info(f"Simulation step {step_num}")
+            logging.info(f"Simulation step {step_num}/{max_steps}")
             
             # Example of an aggregated metric for DEBUG logging
             avg_velocity = np.mean(np.linalg.norm(particles.velocities, axis=1))
             logging.debug(f"Step {step_num} | Average Velocity: {avg_velocity:.4f}")
 
+        # Check for max_steps exit condition
+        if step_num >= max_steps:
+            logging.info(f"Reached max_steps ({max_steps}). Stopping simulation.")
+            running = False
+    profiler.disable()
+
     visualizer.close()
     logging.info("Simulation loop finished.")
+
+    # --- Performance Profile Output (Rule 11 & 2) ---
+    logging.info("--- Performance Profile ---")
+    s = io.StringIO()
+    # Sort by cumulative time spent in the function
+    stats = pstats.Stats(profiler, stream=s).sort_stats('cumtime')
+    stats.print_stats(20) # Print top 20 slowest functions
+    logging.info(f"\n{s.getvalue()}")
+
+
     logging.info("--- Particle Life Simulation Shutting Down ---")
 
 
