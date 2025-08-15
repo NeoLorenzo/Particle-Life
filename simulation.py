@@ -107,10 +107,12 @@ def _calculate_forces_numba(
                             else:
                                 type_j = types[j]
                                 strength = interaction_matrix[type_i, type_j]
-                                # Rule 3: Abstracted force model. Force is now distance-dependent.
-                                # It's zero at radius_max and scales up as particles get closer.
-                                # This prevents the "stuck" equilibrium of a constant force model.
-                                force_magnitude = strength * (1.0 - (distance / radius_max))
+                                # A more traditional particle life force model where the force
+                                # is strongest at a distance between radius_min and radius_max.
+                                if distance > (radius_min + radius_max) / 2:
+                                    force_magnitude = strength * (1 - (distance - (radius_min + radius_max) / 2) / ((radius_max - radius_min) / 2))
+                                else:
+                                    force_magnitude = strength * (distance - radius_min) / ((radius_max - radius_min) / 2)
                                 force = direction * force_magnitude
                             
                             # Apply force to both particles (Newton's 3rd Law)
@@ -133,7 +135,7 @@ class Simulation:
         """
         self.particles = particles
         # Rule 11.6: Use float32 for performance.
-        self.friction = np.float32(params['friction'])
+        self.max_velocity = np.float32(params.get('max_velocity', 5.0))
         self.interaction_matrix = np.array(params['interaction_matrix'], dtype=np.float32)
         self.radius_min = np.float32(params['interaction_radius_min'])
         self.radius_max = np.float32(params['interaction_radius_max'])
@@ -189,11 +191,20 @@ class Simulation:
             self.repulsion_strength, self.interaction_matrix
         )
 
-        # 3. Update velocities with forces and friction
+        # 3. Update velocities with forces
         self.particles.velocities += total_force
-        self.particles.velocities *= (1.0 - self.friction)
 
-        # 4. Update positions with velocities
+        # 4. Apply velocity cap
+        velocities = self.particles.velocities
+        speed = np.linalg.norm(velocities, axis=1)
+        # Identify particles moving too fast
+        over_speed_mask = speed > self.max_velocity
+        # For those particles, scale their velocity vector back to the max_velocity
+        velocities[over_speed_mask] = (
+            velocities[over_speed_mask] / speed[over_speed_mask, np.newaxis]
+        ) * self.max_velocity
+
+        # 5. Update positions with velocities
         self.particles.positions += self.particles.velocities
 
         # 5. Handle boundary conditions (bouncing)
