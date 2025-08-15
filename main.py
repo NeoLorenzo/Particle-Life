@@ -48,7 +48,7 @@ def main():
 
     # Initialize the visualizer
     from visualization import Visualizer
-    visualizer = Visualizer(WINDOW_WIDTH, WINDOW_HEIGHT)
+    visualizer = Visualizer(WINDOW_WIDTH, WINDOW_HEIGHT, sim_params['particle_types'])
 
     # --- Profiler Setup (Rule 11) ---
     profiler = cProfile.Profile()

@@ -18,10 +18,11 @@ if TYPE_CHECKING:
 # --- Data Contracts ---
 #
 # class Visualizer:
-#   - __init__(self, width: int, height: int):
+#   - __init__(self, width: int, height: int, particle_types: int):
 #     - Inputs:
 #       - width: int, width of the display window.
 #       - height: int, height of the display window.
+#       - particle_types: int, the number of particle types (dimension of the matrix).
 #     - Outputs: None
 #     - Side Effects: Initializes Pygame and creates a display surface.
 #
@@ -38,7 +39,7 @@ class Visualizer:
     """
     Renders the particle system state and provides interactive UI elements.
     """
-    def __init__(self, width: int, height: int):
+    def __init__(self, width: int, height: int, particle_types: int):
         """
         Initializes Pygame and the display window.
         """
@@ -49,7 +50,7 @@ class Visualizer:
         self.clock = pygame.time.Clock()
         
         # Generate a color for each particle type
-        self.colors = self._generate_colors(10) # Generate more than needed
+        self.colors = self._generate_colors(particle_types + 1)
 
         # --- UI Configuration (Rule 1: Application Constants) ---
         self.font = pygame.font.SysFont("monospace", 12)
@@ -60,6 +61,15 @@ class Visualizer:
         self.label_circle_radius = 8
         self.hovered_cell: Optional[Tuple[int, int]] = None
         self.scroll_sensitivity = 0.05
+
+        # --- Reset Button Configuration ---
+        matrix_pixel_width = particle_types * (self.cell_size + self.cell_padding) - self.cell_padding
+        matrix_pixel_height = particle_types * (self.cell_size + self.cell_padding) - self.cell_padding
+        button_y = self.matrix_pos[1] + matrix_pixel_height + 10
+        self.reset_button_rect = pygame.Rect(self.matrix_pos[0], button_y, matrix_pixel_width, 30)
+        self.button_color = (80, 80, 80)
+        self.button_hover_color = (110, 110, 110)
+        self.button_text_color = (255, 255, 255)
 
         logging.info(f"Visualizer initialized with Pygame display ({width}x{height}).")
 
@@ -128,6 +138,17 @@ class Visualizer:
                 text_rect = text_surf.get_rect(center=cell_rect.center)
                 self.screen.blit(text_surf, text_rect)
 
+    def _draw_reset_button(self, mouse_pos: Tuple[int, int]):
+        """Draws the reset button and handles its hover state."""
+        is_hovered = self.reset_button_rect.collidepoint(mouse_pos)
+        color = self.button_hover_color if is_hovered else self.button_color
+        
+        pygame.draw.rect(self.screen, color, self.reset_button_rect, border_radius=5)
+        
+        text_surf = self.font.render("Reset", True, self.button_text_color)
+        text_rect = text_surf.get_rect(center=self.reset_button_rect.center)
+        self.screen.blit(text_surf, text_rect)
+
     def draw(self, particles: ParticleSystem, simulation: "Simulation") -> bool:
         """
         Draws all particles and UI, and handles events.
@@ -144,7 +165,11 @@ class Visualizer:
                 logging.info("Quit event received. Shutting down visualizer.")
                 return False
             
-            # Rule 6: Implement interaction from validation protocol
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1 and self.reset_button_rect.collidepoint(mouse_pos):
+                    simulation.interaction_matrix.fill(0.0)
+                    logging.info("Interaction matrix reset to all zeros by user.")
+
             if event.type == pygame.MOUSEWHEEL:
                 if self.hovered_cell:
                     r, c = self.hovered_cell
@@ -180,6 +205,7 @@ class Visualizer:
         
         # Draw the UI on top
         self._draw_interaction_matrix(simulation)
+        self._draw_reset_button(mouse_pos)
 
         pygame.display.flip()
         return True
