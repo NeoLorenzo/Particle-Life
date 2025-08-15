@@ -6,8 +6,8 @@
     "friction": 0.5,
     "repulsion_strength": 0.5,
     "interaction_matrix": [
-      [0.0,  1.0],
-      [1.0,  0.0]
+      [1.0,  0.5],
+      [0.5,  -1.0]
     ],
     "interaction_radius_min": 10.0,
     "interaction_radius_max": 100.0
