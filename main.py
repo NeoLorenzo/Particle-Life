@@ -67,7 +67,9 @@ def main():
 
         # The visualizer's draw method now controls the loop
         # by checking for the QUIT event. It returns False if the user quits.
-        if not visualizer.draw(particles):
+        # We pass the simulation object to allow the visualizer to display
+        # and interact with simulation parameters like the interaction matrix.
+        if not visualizer.draw(particles, sim):
             running = False
 
         # Rule 2.4: Hot loops must throttle logs
