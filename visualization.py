@@ -191,18 +191,38 @@ class Visualizer:
         # Drawing
         self.screen.fill(BACKGROUND_COLOR)
 
-        # Draw particles
+        # Draw particles with toroidal wrapping for seamless visualization
+        draw_radius_check = simulation.radius_max
+
         for i in range(particles.particle_count):
             pos = particles.positions[i]
             p_type = particles.types[i]
             color = self.colors[p_type % len(self.colors)]
-            pygame.draw.circle(
-                self.screen,
-                color,
-                (int(pos[0]), int(pos[1])),
-                DEFAULT_PARTICLE_RADIUS
-            )
-        
+
+            # Determine necessary offsets for drawing ghosts
+            x_offsets = [0]
+            if pos[0] < draw_radius_check:
+                x_offsets.append(WINDOW_WIDTH)
+            elif pos[0] > WINDOW_WIDTH - draw_radius_check:
+                x_offsets.append(-WINDOW_WIDTH)
+
+            y_offsets = [0]
+            if pos[1] < draw_radius_check:
+                y_offsets.append(WINDOW_HEIGHT)
+            elif pos[1] > WINDOW_HEIGHT - draw_radius_check:
+                y_offsets.append(-WINDOW_HEIGHT)
+
+            # Draw the particle and its ghosts
+            for x_offset in x_offsets:
+                for y_offset in y_offsets:
+                    draw_pos = (int(pos[0] + x_offset), int(pos[1] + y_offset))
+                    pygame.draw.circle(
+                        self.screen,
+                        color,
+                        draw_pos,
+                        DEFAULT_PARTICLE_RADIUS
+                    )
+
         # Draw the UI on top
         self._draw_interaction_matrix(simulation)
         self._draw_reset_button(mouse_pos)

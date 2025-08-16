@@ -62,7 +62,8 @@ def _update_grid_numba(positions, grid, grid_width, grid_height, grid_cell_size)
 @jit(nopython=True)
 def _calculate_forces_numba(
     positions, types, grid, grid_width, grid_height, grid_cell_size,
-    radius_min, radius_min_sq, radius_max, radius_max_sq, repulsion_strength, interaction_matrix
+    radius_min, radius_min_sq, radius_max, radius_max_sq, repulsion_strength, interaction_matrix,
+    world_width, world_height
 ):
     """
     Numba-jitted function to calculate inter-particle forces.
@@ -73,6 +74,8 @@ def _calculate_forces_numba(
     """
     particle_count = positions.shape[0]
     total_force = np.zeros_like(positions)
+    half_width = world_width / 2
+    half_height = world_height / 2
 
     for i in range(particle_count):
         pos_i = positions[i]
@@ -93,6 +96,13 @@ def _calculate_forces_numba(
 
                         pos_j = positions[j]
                         delta_pos = pos_j - pos_i
+                        
+                        # --- Toroidal distance correction (Rule 3: Realism) ---
+                        if delta_pos[0] > half_width: delta_pos[0] -= world_width
+                        elif delta_pos[0] < -half_width: delta_pos[0] += world_width
+                        if delta_pos[1] > half_height: delta_pos[1] -= world_height
+                        elif delta_pos[1] < -half_height: delta_pos[1] += world_height
+
                         distance_sq = delta_pos[0]**2 + delta_pos[1]**2
 
                         if 0 < distance_sq < radius_max_sq:
@@ -145,6 +155,10 @@ class Simulation:
         self.radius_min_sq = self.radius_min ** 2
         self.radius_max_sq = self.radius_max ** 2
 
+        # Store world dimensions for toroidal physics calculations
+        self.world_width = np.float32(WINDOW_WIDTH)
+        self.world_height = np.float32(WINDOW_HEIGHT)
+
         # Rule 7: Enforce data contracts. Validate config on initialization.
         num_types = self.particles.particle_types
         matrix_shape = self.interaction_matrix.shape
@@ -188,7 +202,8 @@ class Simulation:
             self.particles.positions, self.particles.types, self.grid,
             self.grid_width, self.grid_height, self.grid_cell_size,
             self.radius_min, self.radius_min_sq, self.radius_max, self.radius_max_sq,
-            self.repulsion_strength, self.interaction_matrix
+            self.repulsion_strength, self.interaction_matrix,
+            self.world_width, self.world_height
         )
 
         # 3. Update velocities with forces
