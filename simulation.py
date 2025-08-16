@@ -40,24 +40,55 @@ from numba.typed import List
 #       are clamped within the window bounds.
 
 @jit(nopython=True)
-def _update_grid_numba(positions, grid, grid_width, grid_height, grid_cell_size):
-    """Numba-jitted function to populate the spatial grid."""
+def _update_grid_numba(positions, grid, grid_width, grid_height, grid_cell_size, world_width, world_height):
+    """
+    Numba-jitted function to populate the spatial grid.
+
+    This version includes placing "ghost" particles in cells on the opposite
+    side of the grid if a particle is within interaction range of a boundary.
+    This is critical for making toroidal physics work with the grid optimization.
+    """
     # Clear the grid
     for cell in grid:
         cell.clear()
     
-    # Place particle indices into grid cells
     particle_count = positions.shape[0]
     for i in range(particle_count):
         pos = positions[i]
+        
+        # --- Primary Cell Placement ---
         cell_x = int(pos[0] / grid_cell_size)
         cell_y = int(pos[1] / grid_cell_size)
-        
-        # Clamp to grid bounds
-        cell_x = max(0, min(grid_width - 1, cell_x))
-        cell_y = max(0, min(grid_height - 1, cell_y))
-
         grid[cell_x + cell_y * grid_width].append(i)
+
+        # --- Ghost Particle Placement for Toroidal Wrapping ---
+        # A particle near an edge must be "mirrored" to the other side so that
+        # particles across the boundary can see it in their local grid search.
+        # The check distance is grid_cell_size, which equals radius_max.
+        near_left = pos[0] < grid_cell_size
+        near_right = pos[0] > world_width - grid_cell_size
+        near_top = pos[1] < grid_cell_size
+        near_bottom = pos[1] > world_height - grid_cell_size
+
+        # Add to ghost cells on the opposite side of the grid
+        if near_right:
+            grid[(cell_x - grid_width + 1) + cell_y * grid_width].append(i)
+        if near_left:
+            grid[(cell_x + grid_width - 1) + cell_y * grid_width].append(i)
+        if near_bottom:
+            grid[cell_x + (cell_y - grid_height + 1) * grid_width].append(i)
+        if near_top:
+            grid[cell_x + (cell_y + grid_height - 1) * grid_width].append(i)
+
+        # Handle corners by adding to diagonal ghost cells
+        if near_right and near_bottom:
+            grid[(cell_x - grid_width + 1) + (cell_y - grid_height + 1) * grid_width].append(i)
+        if near_left and near_bottom:
+            grid[(cell_x + grid_width - 1) + (cell_y - grid_height + 1) * grid_width].append(i)
+        if near_right and near_top:
+            grid[(cell_x - grid_width + 1) + (cell_y + grid_height - 1) * grid_width].append(i)
+        if near_left and near_top:
+            grid[(cell_x + grid_width - 1) + (cell_y + grid_height - 1) * grid_width].append(i)
 
 @jit(nopython=True)
 def _calculate_forces_numba(
@@ -194,7 +225,8 @@ class Simulation:
         # 1. Update the spatial grid with particle locations (using Numba)
         _update_grid_numba(
             self.particles.positions, self.grid,
-            self.grid_width, self.grid_height, self.grid_cell_size
+            self.grid_width, self.grid_height, self.grid_cell_size,
+            self.world_width, self.world_height
         )
 
         # 2. Calculate forces using the Numba-jitted function

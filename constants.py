@@ -9,8 +9,8 @@ part of the experimental configuration.
 """
 
 # Visualization settings
-WINDOW_WIDTH = 1920
-WINDOW_HEIGHT = 1080
+WINDOW_WIDTH = 1800
+WINDOW_HEIGHT = 500
 FPS = 60
 BACKGROUND_COLOR = (24, 24, 24) # Dark Gray
 DEFAULT_PARTICLE_RADIUS = 3
