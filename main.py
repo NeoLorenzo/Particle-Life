@@ -36,6 +36,7 @@ def main():
     # Rule 7 (DIP): Depend on abstractions. We get config sections.
     sim_params = config.get('simulation_parameters', {})
     run_params = config.get('run_control', {})
+    vis_params = config.get('visualization', {})
 
     # Rule 1 (Application Constants): Import and use constants.
     from constants import WINDOW_WIDTH, WINDOW_HEIGHT
@@ -48,7 +49,12 @@ def main():
 
     # Initialize the visualizer
     from visualization import Visualizer
-    visualizer = Visualizer(WINDOW_WIDTH, WINDOW_HEIGHT, sim_params['particle_types'])
+    visualizer = Visualizer(
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        sim_params['particle_types'],
+        colors=vis_params.get('particle_colors')
+    )
 
     # --- Profiler Setup (Rule 11) ---
     profiler = cProfile.Profile()

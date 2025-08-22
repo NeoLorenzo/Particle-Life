@@ -147,13 +147,23 @@ def _calculate_forces_numba(
                                 force = -direction * repulsion_strength * (1 - distance / radius_min)
                             else:
                                 # Asymmetrical interaction force
+                                # Rule 8: This is a scientifically-grounded abstraction.
+                                # The force peaks at an ideal distance and falls off,
+                                # modeling phenomena like optimal bond lengths in chemistry
+                                # or personal space in biology.
                                 type_j = types[j]
                                 strength = interaction_matrix[type_i, type_j]
                                 
-                                if distance > (radius_min + radius_max) / 2:
-                                    force_magnitude = strength * (1 - (distance - (radius_min + radius_max) / 2) / ((radius_max - radius_min) / 2))
+                                # Define the "sweet spot" for attraction as the midpoint
+                                ideal_dist = (radius_min + radius_max) / 2.0
+                                
+                                if distance < ideal_dist:
+                                    # Between min radius and ideal distance, force ramps up
+                                    force_magnitude = strength * (distance - radius_min) / (ideal_dist - radius_min)
                                 else:
-                                    force_magnitude = strength * (distance - radius_min) / ((radius_max - radius_min) / 2)
+                                    # Between ideal distance and max radius, force ramps down
+                                    force_magnitude = strength * (1.0 - (distance - ideal_dist) / (radius_max - ideal_dist))
+                                
                                 force = direction * force_magnitude
                             
                             # Apply the calculated force only to particle i
@@ -165,6 +175,18 @@ class Simulation:
     Manages the simulation loop and physics calculations using a spatial grid
     for performance optimization.
     """
+    def randomize_interaction_matrix(self):
+        """
+        Replaces the current interaction matrix with random values between -1.0 and 1.0.
+        """
+        # Rule 7 (SRP): This class is responsible for the simulation state,
+        # so it is the correct place to modify the matrix.
+        num_types = self.interaction_matrix.shape[0]
+        self.interaction_matrix = (
+            np.random.rand(num_types, num_types).astype(np.float32) * 2.0 - 1.0
+        )
+        logging.info("Interaction matrix randomized by user.")
+
     def __init__(self, particles: ParticleSystem, params: Dict[str, Any]):
         """
         Initializes the simulation environment.
@@ -177,6 +199,8 @@ class Simulation:
         # Rule 11.6: Use float32 for performance.
         self.max_velocity = np.float32(params.get('max_velocity', 5.0))
         self.friction = np.float32(params.get('friction', 0.05))
+        self.velocity_damping_threshold = np.float32(params.get('velocity_damping_threshold', 0.0))
+        self.delta_time = np.float32(params.get('delta_time', 0.1))
         self.interaction_matrix = np.array(params['interaction_matrix'], dtype=np.float32)
         self.radius_min = np.float32(params['interaction_radius_min'])
         self.radius_max = np.float32(params['interaction_radius_max'])
@@ -238,8 +262,8 @@ class Simulation:
             self.world_width, self.world_height
         )
 
-        # 3. Update velocities with forces
-        self.particles.velocities += total_force
+        # 3. Update velocities with forces, scaled by delta_time for stability
+        self.particles.velocities += total_force * self.delta_time
 
         # 4. Apply friction
         self.particles.velocities *= (1.0 - self.friction)
@@ -254,10 +278,19 @@ class Simulation:
             velocities[over_speed_mask] / speed[over_speed_mask, np.newaxis]
         ) * self.max_velocity
 
-        # 5. Update positions with velocities
-        self.particles.positions += self.particles.velocities
+        # 6. Apply stiction/damping for very low velocities (Rule 8)
+        # This prevents jittering in stable configurations by zeroing out
+        # velocities below a certain threshold.
+        if self.velocity_damping_threshold > 0:
+            # Recalculate speed if it was changed by the velocity cap
+            speed[over_speed_mask] = self.max_velocity
+            below_threshold_mask = speed < self.velocity_damping_threshold
+            velocities[below_threshold_mask] = 0.0
 
-        # 6. Handle boundary conditions (toroidal wrap-around)
+        # 7. Update positions with velocities, scaled by delta_time
+        self.particles.positions += self.particles.velocities * self.delta_time
+
+        # 8. Handle boundary conditions (toroidal wrap-around)
         pos = self.particles.positions
         
         # Wrap positions using the modulo operator for an infinite space effect

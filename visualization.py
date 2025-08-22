@@ -18,11 +18,13 @@ if TYPE_CHECKING:
 # --- Data Contracts ---
 #
 # class Visualizer:
-#   - __init__(self, width: int, height: int, particle_types: int):
+#   - __init__(self, width: int, height: int, particle_types: int, colors: Optional[list] = None):
 #     - Inputs:
 #       - width: int, width of the display window.
 #       - height: int, height of the display window.
-#       - particle_types: int, the number of particle types (dimension of the matrix).
+#       - particle_types: int, the number of particle types.
+#       - colors: Optional list of RGB color lists (e.g., [[255,0,0], ...])
+#         from the configuration. If None, colors are generated.
 #     - Outputs: None
 #     - Side Effects: Initializes Pygame and creates a display surface.
 #
@@ -39,7 +41,7 @@ class Visualizer:
     """
     Renders the particle system state and provides interactive UI elements.
     """
-    def __init__(self, width: int, height: int, particle_types: int):
+    def __init__(self, width: int, height: int, particle_types: int, colors: Optional[list] = None):
         """
         Initializes Pygame and the display window.
         """
@@ -49,8 +51,8 @@ class Visualizer:
         pygame.display.set_caption("Particle Life")
         self.clock = pygame.time.Clock()
         
-        # Generate a color for each particle type
-        self.colors = self._generate_colors(particle_types + 1)
+        # Load or generate colors for each particle type
+        self.colors = self._initialize_colors(particle_types, colors)
 
         # --- UI Configuration (Rule 1: Application Constants) ---
         self.font = pygame.font.SysFont("monospace", 12)
@@ -67,15 +69,53 @@ class Visualizer:
         matrix_pixel_height = particle_types * (self.cell_size + self.cell_padding) - self.cell_padding
         button_y = self.matrix_pos[1] + matrix_pixel_height + 10
         self.reset_button_rect = pygame.Rect(self.matrix_pos[0], button_y, matrix_pixel_width, 30)
+        
+        # --- Randomize Button Configuration ---
+        randomize_button_y = self.reset_button_rect.bottom + 5
+        self.randomize_button_rect = pygame.Rect(self.matrix_pos[0], randomize_button_y, matrix_pixel_width, 30)
+
         self.button_color = (80, 80, 80)
         self.button_hover_color = (110, 110, 110)
         self.button_text_color = (255, 255, 255)
 
         logging.info(f"Visualizer initialized with Pygame display ({width}x{height}).")
 
-    def _generate_colors(self, n: int) -> list:
-        """Generates N visually distinct colors."""
-        return [pygame.Color(0).lerp(pygame.Color((i * 997) % 256, (i * 1337) % 256, (i * 777) % 256), 0.7) for i in range(n)]
+    def _generate_colors(self, n: int, offset: int = 0) -> list:
+        """Generates N visually distinct colors, with an optional offset for the seed."""
+        return [pygame.Color(0).lerp(pygame.Color(((i + offset) * 997) % 256, ((i + offset) * 1337) % 256, ((i + offset) * 777) % 256), 0.7) for i in range(n)]
+
+    def _initialize_colors(self, particle_types: int, config_colors: Optional[list]) -> list:
+        """Initializes particle colors from config, falling back to procedural generation."""
+        if not config_colors:
+            logging.info(f"No colors found in config. Generating {particle_types} colors procedurally.")
+            return self._generate_colors(particle_types)
+
+        final_colors = []
+        try:
+            for rgb in config_colors:
+                final_colors.append(pygame.Color(rgb))
+        except (ValueError, TypeError) as e:
+            logging.error(f"Could not parse colors from config due to invalid format: {e}. Falling back to procedural generation.")
+            return self._generate_colors(particle_types)
+
+        num_loaded = len(final_colors)
+        if num_loaded < particle_types:
+            num_to_generate = particle_types - num_loaded
+            logging.warning(
+                f"Config provides {num_loaded} colors, but {particle_types} are needed. "
+                f"Generating the remaining {num_to_generate}."
+            )
+            final_colors.extend(self._generate_colors(num_to_generate, offset=num_loaded))
+        elif num_loaded > particle_types:
+            logging.warning(
+                f"Config provides {num_loaded} colors, but only {particle_types} are needed. "
+                "Ignoring excess colors."
+            )
+            final_colors = final_colors[:particle_types]
+        else:
+            logging.info(f"Successfully loaded {num_loaded} particle colors from configuration.")
+            
+        return final_colors
 
     def _get_matrix_cell_from_pos(self, pos: Tuple[int, int], matrix_shape: Tuple[int, int]) -> Optional[Tuple[int, int]]:
         """
@@ -149,6 +189,17 @@ class Visualizer:
         text_rect = text_surf.get_rect(center=self.reset_button_rect.center)
         self.screen.blit(text_surf, text_rect)
 
+    def _draw_randomize_button(self, mouse_pos: Tuple[int, int]):
+        """Draws the randomize button and handles its hover state."""
+        is_hovered = self.randomize_button_rect.collidepoint(mouse_pos)
+        color = self.button_hover_color if is_hovered else self.button_color
+        
+        pygame.draw.rect(self.screen, color, self.randomize_button_rect, border_radius=5)
+        
+        text_surf = self.font.render("Randomize", True, self.button_text_color)
+        text_rect = text_surf.get_rect(center=self.randomize_button_rect.center)
+        self.screen.blit(text_surf, text_rect)
+
     def draw(self, particles: ParticleSystem, simulation: "Simulation") -> bool:
         """
         Draws all particles and UI, and handles events.
@@ -166,9 +217,12 @@ class Visualizer:
                 return False
             
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1 and self.reset_button_rect.collidepoint(mouse_pos):
-                    simulation.interaction_matrix.fill(0.0)
-                    logging.info("Interaction matrix reset to all zeros by user.")
+                if event.button == 1: # Left mouse click
+                    if self.reset_button_rect.collidepoint(mouse_pos):
+                        simulation.interaction_matrix.fill(0.0)
+                        logging.info("Interaction matrix reset to all zeros by user.")
+                    elif self.randomize_button_rect.collidepoint(mouse_pos):
+                        simulation.randomize_interaction_matrix()
 
             if event.type == pygame.MOUSEWHEEL:
                 if self.hovered_cell:
@@ -226,6 +280,7 @@ class Visualizer:
         # Draw the UI on top
         self._draw_interaction_matrix(simulation)
         self._draw_reset_button(mouse_pos)
+        self._draw_randomize_button(mouse_pos)
 
         pygame.display.flip()
         return True
