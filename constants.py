@@ -9,8 +9,10 @@ part of the experimental configuration.
 """
 
 # Visualization settings
-WINDOW_WIDTH = 1500
-WINDOW_HEIGHT = 700
+# Set to True to run in borderless fullscreen mode.
+# Set to False to run in a fixed-size window (1800x700).
+FULLSCREEN = True
+UI_PANEL_WIDTH = 300
 FPS = 60
 BACKGROUND_COLOR = (24, 24, 24) # Dark Gray
-DEFAULT_PARTICLE_RADIUS = 3
+DEFAULT_PARTICLE_RADIUS = 4

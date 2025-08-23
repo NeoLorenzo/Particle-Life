@@ -6,7 +6,7 @@ import logging
 import pygame
 import numpy as np
 from particle import ParticleSystem
-from constants import WINDOW_WIDTH, WINDOW_HEIGHT, BACKGROUND_COLOR, DEFAULT_PARTICLE_RADIUS
+from constants import BACKGROUND_COLOR, DEFAULT_PARTICLE_RADIUS, FULLSCREEN, UI_PANEL_WIDTH
 from typing import Tuple, Optional
 
 # Forward reference for type hinting to avoid circular import
@@ -41,13 +41,29 @@ class Visualizer:
     """
     Renders the particle system state and provides interactive UI elements.
     """
-    def __init__(self, width: int, height: int, particle_types: int, colors: Optional[list] = None):
+    def __init__(self, particle_types: int, colors: Optional[list] = None):
         """
         Initializes Pygame and the display window.
         """
         pygame.init()
         pygame.font.init()
-        self.screen = pygame.display.set_mode((width, height))
+
+        if FULLSCREEN:
+            display_info = pygame.display.Info()
+            width, height = display_info.current_w, display_info.current_h
+            self.screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN)
+        else:
+            # Fallback to a fixed size if not fullscreen
+            width, height = 1500 + UI_PANEL_WIDTH, 700
+            self.screen = pygame.display.set_mode((width, height))
+
+        # The simulation area is the total width minus the UI panel
+        self.sim_width = width - UI_PANEL_WIDTH
+        self.sim_height = height
+        
+        # Create a dedicated surface for the simulation area
+        self.sim_surface = pygame.Surface((self.sim_width, self.sim_height))
+
         pygame.display.set_caption("Particle Life")
         self.clock = pygame.time.Clock()
         
@@ -57,7 +73,8 @@ class Visualizer:
         # --- UI Configuration (Rule 1: Application Constants) ---
         self.font = pygame.font.SysFont("monospace", 12)
         self.label_margin = 20 # Space for the colored circle labels
-        self.matrix_pos = (10 + self.label_margin, 10 + self.label_margin)
+        # Position the matrix inside the new UI panel
+        self.matrix_pos = (self.sim_width + 30, 10 + self.label_margin)
         self.cell_size = 40
         self.cell_padding = 2
         self.label_circle_radius = 8
@@ -216,6 +233,12 @@ class Visualizer:
                 logging.info("Quit event received. Shutting down visualizer.")
                 return False
             
+            # Add ESC key press to exit fullscreen mode
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    logging.info("ESC key pressed. Shutting down visualizer.")
+                    return False
+            
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1: # Left mouse click
                     if self.reset_button_rect.collidepoint(mouse_pos):
@@ -243,9 +266,11 @@ class Visualizer:
                     )
 
         # Drawing
+        # 1. Clear the main screen and the simulation surface
         self.screen.fill(BACKGROUND_COLOR)
+        self.sim_surface.fill(BACKGROUND_COLOR)
 
-        # Draw particles with toroidal wrapping for seamless visualization
+        # 2. Draw particles onto the dedicated simulation surface
         draw_radius_check = simulation.radius_max
 
         for i in range(particles.particle_count):
@@ -253,31 +278,34 @@ class Visualizer:
             p_type = particles.types[i]
             color = self.colors[p_type % len(self.colors)]
 
-            # Determine necessary offsets for drawing ghosts
+            # Determine necessary offsets for drawing ghosts (using sim dimensions)
             x_offsets = [0]
             if pos[0] < draw_radius_check:
-                x_offsets.append(WINDOW_WIDTH)
-            elif pos[0] > WINDOW_WIDTH - draw_radius_check:
-                x_offsets.append(-WINDOW_WIDTH)
+                x_offsets.append(self.sim_width)
+            elif pos[0] > self.sim_width - draw_radius_check:
+                x_offsets.append(-self.sim_width)
 
             y_offsets = [0]
             if pos[1] < draw_radius_check:
-                y_offsets.append(WINDOW_HEIGHT)
-            elif pos[1] > WINDOW_HEIGHT - draw_radius_check:
-                y_offsets.append(-WINDOW_HEIGHT)
+                y_offsets.append(self.sim_height)
+            elif pos[1] > self.sim_height - draw_radius_check:
+                y_offsets.append(-self.sim_height)
 
-            # Draw the particle and its ghosts
+            # Draw the particle and its ghosts onto the sim_surface
             for x_offset in x_offsets:
                 for y_offset in y_offsets:
                     draw_pos = (int(pos[0] + x_offset), int(pos[1] + y_offset))
                     pygame.draw.circle(
-                        self.screen,
+                        self.sim_surface, # Draw on the sim surface
                         color,
                         draw_pos,
                         DEFAULT_PARTICLE_RADIUS
                     )
+        
+        # 3. Blit the simulation surface onto the main screen at (0, 0)
+        self.screen.blit(self.sim_surface, (0, 0))
 
-        # Draw the UI on top
+        # 4. Draw the UI directly onto the main screen in the panel area
         self._draw_interaction_matrix(simulation)
         self._draw_reset_button(mouse_pos)
         self._draw_randomize_button(mouse_pos)

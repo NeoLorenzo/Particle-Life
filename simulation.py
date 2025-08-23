@@ -10,7 +10,6 @@ import logging
 import numpy as np
 from typing import Dict, Any
 from particle import ParticleSystem
-from constants import WINDOW_WIDTH, WINDOW_HEIGHT
 from numba import jit
 from numba.core import types
 from numba.typed import List
@@ -187,13 +186,15 @@ class Simulation:
         )
         logging.info("Interaction matrix randomized by user.")
 
-    def __init__(self, particles: ParticleSystem, params: Dict[str, Any]):
+    def __init__(self, particles: ParticleSystem, params: Dict[str, Any], world_width: int, world_height: int):
         """
         Initializes the simulation environment.
 
         Args:
             particles (ParticleSystem): The particle system to simulate.
             params (Dict[str, Any]): Simulation parameters from config.
+            world_width (int): The width of the simulation world.
+            world_height (int): The height of the simulation world.
         """
         self.particles = particles
         # Rule 11.6: Use float32 for performance.
@@ -211,8 +212,8 @@ class Simulation:
         self.radius_max_sq = self.radius_max ** 2
 
         # Store world dimensions for toroidal physics calculations
-        self.world_width = np.float32(WINDOW_WIDTH)
-        self.world_height = np.float32(WINDOW_HEIGHT)
+        self.world_width = np.float32(world_width)
+        self.world_height = np.float32(world_height)
 
         # Rule 7: Enforce data contracts. Validate config on initialization.
         num_types = self.particles.particle_types
@@ -228,8 +229,8 @@ class Simulation:
         
         # --- Spatial Grid Initialization ---
         self.grid_cell_size = self.radius_max
-        self.grid_width = int(np.ceil(WINDOW_WIDTH / self.grid_cell_size))
-        self.grid_height = int(np.ceil(WINDOW_HEIGHT / self.grid_cell_size))
+        self.grid_width = int(np.ceil(self.world_width / self.grid_cell_size))
+        self.grid_height = int(np.ceil(self.world_height / self.grid_cell_size))
         
         # Rule 11.4: Numba requires typed data structures for JIT compilation.
         # We use a Numba Typed List instead of a standard Python list of lists.
@@ -294,5 +295,5 @@ class Simulation:
         pos = self.particles.positions
         
         # Wrap positions using the modulo operator for an infinite space effect
-        pos[:, 0] %= WINDOW_WIDTH
-        pos[:, 1] %= WINDOW_HEIGHT
+        pos[:, 0] %= self.world_width
+        pos[:, 1] %= self.world_height

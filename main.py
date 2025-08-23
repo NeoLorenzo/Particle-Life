@@ -38,23 +38,25 @@ def main():
     run_params = config.get('run_control', {})
     vis_params = config.get('visualization', {})
 
-    # Rule 1 (Application Constants): Import and use constants.
-    from constants import WINDOW_WIDTH, WINDOW_HEIGHT
+    # Rule 1 (Application Constants): No longer importing dimensions.
     from particle import ParticleSystem
     from simulation import Simulation
-
-    # Initialize simulation components
-    particles = ParticleSystem(sim_params, WINDOW_WIDTH, WINDOW_HEIGHT)
-    sim = Simulation(particles, sim_params)
-
-    # Initialize the visualizer
     from visualization import Visualizer
+
+    # --- Component Initialization ---
+    # 1. Initialize the visualizer first. It will determine the screen dimensions.
     visualizer = Visualizer(
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
-        sim_params['particle_types'],
+        particle_types=sim_params['particle_types'],
         colors=vis_params.get('particle_colors')
     )
+
+    # 2. Get the actual simulation dimensions from the visualizer instance.
+    sim_width = visualizer.sim_width
+    sim_height = visualizer.sim_height
+
+    # 3. Initialize the other components with the dynamic dimensions.
+    particles = ParticleSystem(sim_params, sim_width, sim_height)
+    sim = Simulation(particles, sim_params, sim_width, sim_height)
 
     # --- Profiler Setup (Rule 11) ---
     profiler = cProfile.Profile()

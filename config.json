@@ -4,7 +4,7 @@
     "particle_count": 1800,
     "particle_types": 6,
     "max_velocity": 5.0,
-    "friction": 0.06,
+    "friction": 0.1,
     "repulsion_strength": 9.0,
     "velocity_damping_threshold": 0.01,
     "delta_time": 0.3,
