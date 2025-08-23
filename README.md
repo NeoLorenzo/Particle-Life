@@ -18,7 +18,7 @@
 
 ---
 
-![Particle Life Simulation GIF 1](https://github.com/NeoLorenzo/Particle-Life/demos/particle-life-sim-gif-1.gif)
+![Particle Life Simulation GIF 1](https://raw.githubusercontent.com/NeoLorenzo/Particle-Life/main/demos/particle-life-sim-gif-1.gif)
 
 This project presents a sophisticated and high-performance implementation of a "Particle Life" simulation. It is not merely a visual toy, but a robust framework engineered to explore the principles of **emergent behavior**, where complex, life-like patterns arise from a simple set of underlying rules. The simulation is architected for performance, realism, and extensibility, featuring a real-time interactive UI, a powerful physics core optimized with Numba, and a strict, modular design philosophy.
 
@@ -42,7 +42,7 @@ Experience the mesmerizing emergent behavior of the simulation in this high-reso
 *   **Deterministic & Reproducible:** Every simulation run is controlled by a master seed, ensuring that experiments are fully deterministic and scientifically reproducible.
 *   **Robust & Modular Architecture:** Built on SOLID design principles, the codebase is highly modular, readable, and extensible. Each component (physics, rendering, state management) is decoupled and communicates through clear data contracts.
 
-![Particle Life Simulation GIF 2](https://github.com/NeoLorenzo/Particle-Life/demos/particle-life-sim-gif-2.gif)
+![Particle Life Simulation GIF 2](https://raw.githubusercontent.com/NeoLorenzo/Particle-Life/main/demos/particle-life-sim-gif-2.gif)
 
 ---
 
@@ -75,7 +75,7 @@ All runtime messages are handled by Python's `logging` module. There are no `pri
 
 The simulation's complexity arises from a carefully designed physics engine.
 
-![Particle Life Simulation GIF 3](https://github.com/NeoLorenzo/Particle-Life/demos/particle-life-sim-gif-3.gif)
+![Particle Life Simulation GIF 3](https://raw.githubusercontent.com/NeoLorenzo/Particle-Life/main/demos/particle-life-sim-gif-3.gif)
 
 *   **Asymmetrical Interactions:** The core of the emergent behavior lies in the `interaction_matrix`. The force that particle type `A` exerts on type `B` is not necessarily equal and opposite to the force `B` exerts on `A`. This violation of Newton's Third Law creates net forces on the system, allowing for locomotion, chasing, and other complex dynamics.
 *   **Scientifically-Grounded Force Curve:** The force between two particles is not linear. It follows a curve designed to mimic real-world phenomena:
@@ -138,7 +138,7 @@ Create your own unique particle universes by editing `config.json`.
 
 ## Interactive Controls
 
-![Particle Life UI GIF](https://github.com/NeoLorenzo/Particle-Life/demos/particle-life-sim-gif-4.gif)
+![Particle Life UI GIF](https://raw.githubusercontent.com/NeoLorenzo/Particle-Life/main/demos/particle-life-sim-gif-4.gif)
 
 The UI panel on the right side of the screen provides real-time control over the simulation's physics.
 
