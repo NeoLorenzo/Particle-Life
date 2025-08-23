@@ -47,7 +47,8 @@ def main():
     # 1. Initialize the visualizer first. It will determine the screen dimensions.
     visualizer = Visualizer(
         particle_types=sim_params['particle_types'],
-        colors=vis_params.get('particle_colors')
+        colors=vis_params.get('particle_colors'),
+        sim_params=sim_params # Pass the full dictionary
     )
 
     # 2. Get the actual simulation dimensions from the visualizer instance.

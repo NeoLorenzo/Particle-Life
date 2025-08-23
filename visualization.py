@@ -6,7 +6,12 @@ import logging
 import pygame
 import numpy as np
 from particle import ParticleSystem
-from constants import BACKGROUND_COLOR, DEFAULT_PARTICLE_RADIUS, FULLSCREEN, UI_PANEL_WIDTH
+from constants import (
+    BACKGROUND_COLOR, DEFAULT_PARTICLE_RADIUS, FULLSCREEN, UI_PANEL_WIDTH,
+    MOTION_BLUR_ALPHA, PARTICLE_HALO_RATIO, PARTICLE_HALO_ALPHA,
+    UI_BACKGROUND_ALPHA, VIBRANT_COLORS, VELOCITY_GLOW_MIN_ALPHA,
+    VELOCITY_GLOW_MAX_ALPHA
+)
 from typing import Tuple, Optional
 
 # Forward reference for type hinting to avoid circular import
@@ -41,7 +46,7 @@ class Visualizer:
     """
     Renders the particle system state and provides interactive UI elements.
     """
-    def __init__(self, particle_types: int, colors: Optional[list] = None):
+    def __init__(self, particle_types: int, colors: Optional[list] = None, sim_params: Optional[dict] = None):
         """
         Initializes Pygame and the display window.
         """
@@ -63,6 +68,14 @@ class Visualizer:
         
         # Create a dedicated surface for the simulation area
         self.sim_surface = pygame.Surface((self.sim_width, self.sim_height))
+        # Create a surface for the motion blur effect. This surface will be blitted
+        # onto the main simulation surface each frame to create fading trails.
+        self.blur_surface = pygame.Surface((self.sim_width, self.sim_height), pygame.SRCALPHA)
+        self.blur_surface.fill((BACKGROUND_COLOR[0], BACKGROUND_COLOR[1], BACKGROUND_COLOR[2], MOTION_BLUR_ALPHA))
+        
+        # Create a surface for the UI panel background
+        self.ui_panel_surface = pygame.Surface((UI_PANEL_WIDTH, self.sim_height), pygame.SRCALPHA)
+        self.ui_panel_surface.fill((40, 40, 40, UI_BACKGROUND_ALPHA))
 
         pygame.display.set_caption("Particle Life")
         self.clock = pygame.time.Clock()
@@ -70,8 +83,21 @@ class Visualizer:
         # Load or generate colors for each particle type
         self.colors = self._initialize_colors(particle_types, colors)
 
+        # --- Pre-render Halos for Performance (Rule 11) ---
+        self.halo_surfaces = self._pre_render_halos()
+
         # --- UI Configuration (Rule 1: Application Constants) ---
-        self.font = pygame.font.SysFont("monospace", 12)
+        # Use a cleaner, sans-serif font. Pygame will fall back if 'Segoe UI' is not found.
+        try:
+            self.font_title = pygame.font.SysFont("Segoe UI", 16, bold=True)
+            self.font_main = pygame.font.SysFont("Segoe UI", 14)
+            self.font_main_bold = pygame.font.SysFont("Segoe UI", 14, bold=True)
+        except pygame.error:
+            logging.warning("Segoe UI font not found, falling back to default sans-serif.")
+            self.font_title = pygame.font.SysFont(None, 20, bold=True)
+            self.font_main = pygame.font.SysFont(None, 18)
+            self.font_main_bold = pygame.font.SysFont(None, 18, bold=True)
+
         self.label_margin = 20 # Space for the colored circle labels
         # Position the matrix inside the new UI panel
         self.matrix_pos = (self.sim_width + 30, 10 + self.label_margin)
@@ -91,9 +117,17 @@ class Visualizer:
         randomize_button_y = self.reset_button_rect.bottom + 5
         self.randomize_button_rect = pygame.Rect(self.matrix_pos[0], randomize_button_y, matrix_pixel_width, 30)
 
+        # --- UI Color Palette ---
         self.button_color = (80, 80, 80)
         self.button_hover_color = (110, 110, 110)
-        self.button_text_color = (255, 255, 255)
+        self.text_color_title = (255, 255, 255)
+        self.text_color_key = (200, 200, 200)   # Brighter grey for keys
+        self.text_color_value = (255, 255, 255) # Pure white for values
+        self.param_box_color = (60, 60, 60, 160) # Slightly lighter for individual boxes
+        self.param_box_spacing = 4 # Vertical pixels between each parameter box
+
+        # Store simulation parameters for display
+        self.sim_params = sim_params if sim_params is not None else {}
 
         logging.info(f"Visualizer initialized with Pygame display ({width}x{height}).")
 
@@ -102,27 +136,31 @@ class Visualizer:
         return [pygame.Color(0).lerp(pygame.Color(((i + offset) * 997) % 256, ((i + offset) * 1337) % 256, ((i + offset) * 777) % 256), 0.7) for i in range(n)]
 
     def _initialize_colors(self, particle_types: int, config_colors: Optional[list]) -> list:
-        """Initializes particle colors from config, falling back to procedural generation."""
+        """Initializes particle colors from config, falling back to a vibrant default palette."""
+        def get_default_colors(n_types):
+            return [pygame.Color(VIBRANT_COLORS[i % len(VIBRANT_COLORS)]) for i in range(n_types)]
+
         if not config_colors:
-            logging.info(f"No colors found in config. Generating {particle_types} colors procedurally.")
-            return self._generate_colors(particle_types)
+            logging.info(f"No colors found in config. Using vibrant default palette.")
+            return get_default_colors(particle_types)
 
         final_colors = []
         try:
             for rgb in config_colors:
                 final_colors.append(pygame.Color(rgb))
         except (ValueError, TypeError) as e:
-            logging.error(f"Could not parse colors from config due to invalid format: {e}. Falling back to procedural generation.")
-            return self._generate_colors(particle_types)
+            logging.error(f"Could not parse colors from config due to invalid format: {e}. Falling back to vibrant default palette.")
+            return get_default_colors(particle_types)
 
         num_loaded = len(final_colors)
         if num_loaded < particle_types:
             num_to_generate = particle_types - num_loaded
             logging.warning(
                 f"Config provides {num_loaded} colors, but {particle_types} are needed. "
-                f"Generating the remaining {num_to_generate}."
+                f"Generating the remaining {num_to_generate} using the default palette."
             )
-            final_colors.extend(self._generate_colors(num_to_generate, offset=num_loaded))
+            default_palette = get_default_colors(particle_types)
+            final_colors.extend(default_palette[num_loaded:])
         elif num_loaded > particle_types:
             logging.warning(
                 f"Config provides {num_loaded} colors, but only {particle_types} are needed. "
@@ -191,7 +229,7 @@ class Visualizer:
                     pygame.draw.rect(self.screen, (255, 255, 0), cell_rect, 2) # Yellow border
 
                 # Render text
-                text_surf = self.font.render(f"{value:.2f}", True, (255, 255, 255))
+                text_surf = self.font_main.render(f"{value:.2f}", True, self.text_color_title)
                 text_rect = text_surf.get_rect(center=cell_rect.center)
                 self.screen.blit(text_surf, text_rect)
 
@@ -202,7 +240,7 @@ class Visualizer:
         
         pygame.draw.rect(self.screen, color, self.reset_button_rect, border_radius=5)
         
-        text_surf = self.font.render("Reset", True, self.button_text_color)
+        text_surf = self.font_main.render("Reset", True, self.text_color_title)
         text_rect = text_surf.get_rect(center=self.reset_button_rect.center)
         self.screen.blit(text_surf, text_rect)
 
@@ -213,9 +251,106 @@ class Visualizer:
         
         pygame.draw.rect(self.screen, color, self.randomize_button_rect, border_radius=5)
         
-        text_surf = self.font.render("Randomize", True, self.button_text_color)
+        text_surf = self.font_main.render("Randomize", True, self.text_color_title)
         text_rect = text_surf.get_rect(center=self.randomize_button_rect.center)
         self.screen.blit(text_surf, text_rect)
+
+    def _draw_simulation_parameters(self):
+        """Renders simulation parameters in a list of individual, transparent boxes."""
+        # --- Name Mapping for Readability ---
+        param_name_map = {
+            "seed": "Seed",
+            "particle_count": "Particle Count",
+            "particle_types": "Particle Types",
+            "max_velocity": "Max Velocity",
+            "friction": "Friction",
+            "repulsion_strength": "Repulsion Strength",
+            "velocity_damping_threshold": "Velocity Damping",
+            "delta_time": "Delta Time",
+            "interaction_radius_min": "Min Interaction Radius",
+            "interaction_radius_max": "Max Interaction Radius"
+        }
+
+        # --- Layout Configuration ---
+        box_v_padding = 8 # Vertical padding inside each box
+        line_height = self.font_main.get_linesize()
+        key_value_gap = 20
+        
+        panel_x = self.matrix_pos[0]
+        panel_width = self.reset_button_rect.width
+        current_y = self.randomize_button_rect.bottom + 20
+        
+        # Define column widths and positions
+        key_max_width = (panel_width - key_value_gap) / 2 - box_v_padding
+        value_max_width = key_max_width
+        key_column_right_x = panel_x + box_v_padding + key_max_width
+        value_column_left_x = key_column_right_x + key_value_gap
+
+        # --- Render each parameter in its own box ---
+        for key, value in self.sim_params.items():
+            if key == "interaction_matrix":
+                continue
+            
+            display_key = param_name_map.get(key, key.replace('_', ' ').title())
+            display_value = f"{value:.2f}" if isinstance(value, float) else str(value)
+            
+            key_surfs = self._render_text_wrapped(display_key, self.font_main_bold, key_max_width, self.text_color_key)
+            value_surfs = self._render_text_wrapped(display_value, self.font_main, value_max_width, self.text_color_value)
+            
+            num_lines = max(len(key_surfs), len(value_surfs))
+            entry_height = num_lines * line_height
+            box_height = entry_height + (box_v_padding * 2)
+
+            # Draw the background box for this specific parameter
+            box_rect = pygame.Rect(panel_x, current_y, panel_width, box_height)
+            pygame.draw.rect(self.screen, self.param_box_color, box_rect, border_radius=6)
+
+            # --- Render the text on top of the box ---
+            text_start_y = current_y + box_v_padding
+            
+            # Draw each line of the key
+            line_y = text_start_y
+            for surf in key_surfs:
+                rect = surf.get_rect(topright=(key_column_right_x, line_y))
+                self.screen.blit(surf, rect)
+                line_y += line_height
+
+            # Draw each line of the value
+            line_y = text_start_y
+            for surf in value_surfs:
+                rect = surf.get_rect(topleft=(value_column_left_x, line_y))
+                self.screen.blit(surf, rect)
+                line_y += line_height
+            
+            # Advance current_y for the next parameter box
+            current_y += box_height + self.param_box_spacing
+
+    def _render_text_wrapped(
+        self, text: str, font: pygame.font.Font, max_width: int, color: tuple
+    ) -> list:
+        """
+        Renders text, wrapping it to a new line if it exceeds max_width.
+        Returns a list of rendered surfaces, one for each line.
+        """
+        words = text.split(' ')
+        lines = []
+        current_line = ""
+
+        for word in words:
+            # Test if adding the new word exceeds the width
+            test_line = f"{current_line} {word}".strip()
+            if font.size(test_line)[0] <= max_width:
+                current_line = test_line
+            else:
+                # Line is too long, finalize the previous line
+                lines.append(current_line)
+                # Start a new line with the current word
+                current_line = word
+        
+        lines.append(current_line) # Add the last line
+
+        # Render each line into a surface with anti-aliasing
+        return [font.render(line, True, color) for line in lines if line]
 
     def draw(self, particles: ParticleSystem, simulation: "Simulation") -> bool:
         """
@@ -266,17 +401,34 @@ class Visualizer:
                     )
 
         # Drawing
-        # 1. Clear the main screen and the simulation surface
-        self.screen.fill(BACKGROUND_COLOR)
-        self.sim_surface.fill(BACKGROUND_COLOR)
+        # 1. Apply motion blur: Draw the semi-transparent blur surface over the
+        #    simulation area. This fades the previous frame, creating trails.
+        #    This is the correct way to prevent the "dirty background" artifact.
+        self.sim_surface.blit(self.blur_surface, (0, 0))
 
-        # 2. Draw particles onto the dedicated simulation surface
+        # 2. Draw particles with halos onto the dedicated simulation surface
         draw_radius_check = simulation.radius_max
+        halo_radius = int(DEFAULT_PARTICLE_RADIUS * PARTICLE_HALO_RATIO)
+        max_vel_sq = simulation.max_velocity ** 2 # Pre-calculate for performance
 
         for i in range(particles.particle_count):
             pos = particles.positions[i]
+            vel = particles.velocities[i]
             p_type = particles.types[i]
-            color = self.colors[p_type % len(self.colors)]
+            
+            color_index = p_type % len(self.colors)
+            base_color = self.colors[color_index]
+            halo_surf = self.halo_surfaces[color_index]
+
+            # --- Calculate Velocity-Based Glow ---
+            # Rule 11: Avoid sqrt in hot loops. Use squared magnitude.
+            speed_sq = vel[0]**2 + vel[1]**2
+            # Normalize speed from 0 to 1
+            normalized_speed = min(speed_sq / max_vel_sq, 1.0)
+            
+            # Map normalized speed to the alpha range
+            dynamic_alpha = VELOCITY_GLOW_MIN_ALPHA + (normalized_speed * (VELOCITY_GLOW_MAX_ALPHA - VELOCITY_GLOW_MIN_ALPHA))
+            halo_surf.set_alpha(dynamic_alpha)
 
             # Determine necessary offsets for drawing ghosts (using sim dimensions)
             x_offsets = [0]
@@ -295,9 +447,14 @@ class Visualizer:
             for x_offset in x_offsets:
                 for y_offset in y_offsets:
                     draw_pos = (int(pos[0] + x_offset), int(pos[1] + y_offset))
+                    
+                    # Blit the pre-rendered halo with its new dynamic alpha value.
+                    self.sim_surface.blit(halo_surf, (draw_pos[0] - halo_radius, draw_pos[1] - halo_radius))
+
+                    # Draw the core particle on top
                     pygame.draw.circle(
-                        self.sim_surface, # Draw on the sim surface
-                        color,
+                        self.sim_surface,
+                        base_color,
                         draw_pos,
                         DEFAULT_PARTICLE_RADIUS
                     )
@@ -305,13 +462,36 @@ class Visualizer:
         # 3. Blit the simulation surface onto the main screen at (0, 0)
         self.screen.blit(self.sim_surface, (0, 0))
 
-        # 4. Draw the UI directly onto the main screen in the panel area
+        # 4. Draw the UI panel background and then the UI elements on top
+        self.screen.blit(self.ui_panel_surface, (self.sim_width, 0))
         self._draw_interaction_matrix(simulation)
         self._draw_reset_button(mouse_pos)
         self._draw_randomize_button(mouse_pos)
+        self._draw_simulation_parameters()
 
         pygame.display.flip()
         return True
+
+    def _pre_render_halos(self) -> list:
+        """
+        Pre-renders halo surfaces for each particle color to improve performance.
+        """
+        logging.debug("Pre-rendering particle halo surfaces...")
+        halo_radius = int(DEFAULT_PARTICLE_RADIUS * PARTICLE_HALO_RATIO)
+        diameter = halo_radius * 2
+        surfaces = []
+        for color in self.colors:
+            halo_surf = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+            halo_color = pygame.Color(color.r, color.g, color.b, PARTICLE_HALO_ALPHA)
+            pygame.draw.circle(
+                halo_surf,
+                halo_color,
+                (halo_radius, halo_radius),
+                halo_radius
+            )
+            surfaces.append(halo_surf)
+        logging.debug(f"Finished pre-rendering {len(surfaces)} halo surfaces.")
+        return surfaces
 
     def close(self):
         """Shuts down Pygame."""
