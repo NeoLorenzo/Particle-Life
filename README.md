@@ -1,7 +1,7 @@
 # Particle Life: A High-Performance Simulation of Emergent Behavior
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![Dependencies](https://img.shields.io/badge/dependencies-up--to--date-brightgreen)
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 
@@ -98,7 +98,7 @@ Performance is not an afterthought; it is a core design principle.
 
 ### Prerequisites
 
-You will need Python 3.x and the following libraries:
+You will need Python 3.11 and the following libraries:
 *   `pygame`
 *   `numpy`
 *   `numba`
